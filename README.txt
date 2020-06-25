@@ -10,7 +10,7 @@ tareas hechas:
 3.  Implementar una funci ́on para inicializar el superbloque.
 4.  Declarar una estructura e implementar funciones para manejar inodos. 
 5.  Declarar una estructura e implementar funciones m ́ınimas para manejar archivos y directorios.
-
+6.  Cache de inodos
 static struct kmem_cache *assoofs_inode_cache;
 
 
