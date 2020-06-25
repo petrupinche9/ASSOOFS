@@ -127,18 +127,18 @@ static struct inode *assoofs_get_inode(struct super_block *sb, int ino){
     inode_info = assoofs_get_inode_info(sb, ino);
    // uint64_t count;
    // count=((struct assoofs_super_block_info *)sb->s_fs_info)->inodes_count; // obtengo el n ́umero de inodos de lainformaci ́on persistente del superbloque;
-    if (S_ISDIR(inode_info->mode))
-        inod->i_fop = &assoofs_dir_operations;
-    else if (S_ISREG(inode_info->mode))
-        inod->i_fop = &assoofs_file_operations;
-    else
-        printk(KERN_ERR "Unknown inode type. Neither a directory nor a file.");
+
 
     inod=new_inode(sb);
     inod->i_ino = ino; // ńumero de inodo
     inod->i_sb = sb; // puntero al superbloque
     inod->i_op = &assoofs_inode_ops; // direcci ́on de una variable de tipo struct inode_operations previamente declarada
-    inod->i_fop = &assoofs_dir_operations; // direccion de una variable de tipo struct file_operations previamente declarada
+    if (S_ISDIR(inode_info->mode))
+        inod->i_fop = &assoofs_dir_operations;
+    else if (S_ISREG(inode_info->mode))
+        inod->i_fop = &assoofs_file_operations;
+    else
+        printk(KERN_ERR "Unknown inode type. Neither a directory nor a file."); // direccion de una variable de tipo struct file_operations previamente declarada
     inod->i_atime = inod->i_mtime = inod->i_ctime = current_time(inod);
     inod->i_private = inode_info; // Informaci ́on persistente del inodo
     inode_info = kmem_cache_alloc(assoofs_inode_cache, GFP_KERNEL);
@@ -209,7 +209,7 @@ void assoofs_save_sb_info(struct super_block *vsb){
 
 void assoofs_add_inode_info(struct super_block *sb, struct assoofs_inode_info *inode){
     struct buffer_head *bh;
-    struct assoofs_super_block_info *assoofs_sb;
+    struct assoofs_super_block_info *assoofs_sb = sb->s_fs_info;
     bh = sb_bread(sb, ASSOOFS_INODESTORE_BLOCK_NUMBER);
     inode = (struct assoofs_inode_info *)bh->b_data;
     inode += assoofs_sb->inodes_count;
@@ -242,14 +242,15 @@ static int assoofs_create(struct inode *dir, struct dentry *dentry, umode_t mode
     struct super_block *sb;
     struct assoofs_inode_info *parent_inode_info=NULL;
     struct assoofs_dir_record_entry *dir_contents;
-    struct assoofs_inode_info *inode_info=NULL;
+    struct assoofs_inode_info *inode_info;
     // obtengo un puntero al superbloque desde dir
     sb = dir->i_sb;
      // obtengo el n ́umero de inodos de lainformaci ́on persistente del superbloque
     count = ((struct assoofs_super_block_info *)sb->s_fs_info)->inodes_count;
-    inode = new_inode(sb);
+
     if(count<ASSOOFS_MAX_FILESYSTEM_OBJECTS_SUPPORTED) {
         //CREACION NUEVO INODO
+        inode = new_inode(sb);
         inode->i_ino = count + 1;
         inode_info = kmalloc(sizeof(struct assoofs_inode_info), GFP_KERNEL);
         inode_info->inode_no = inode->i_ino;
@@ -258,10 +259,18 @@ static int assoofs_create(struct inode *dir, struct dentry *dentry, umode_t mode
         inode->i_private = inode_info;
         inode_init_owner(inode, dir, mode);
         d_add(dentry, inode);
-        inode->i_fop=&assoofs_file_operations;
+
+        /*if (S_ISDIR(inode_info->mode))
+            inode->i_fop = &assoofs_dir_operations;
+        else if (S_ISREG(inode_info->mode))
+
+        else
+            printk(KERN_ERR "Unknown inode type. Neither a directory nor a file.");
+*/      inode->i_fop = &assoofs_file_operations;
         inode_info = kmem_cache_alloc(assoofs_inode_cache, GFP_KERNEL);
         assoofs_sb_get_a_freeblock(sb, &inode_info->data_block_number);
         assoofs_add_inode_info(sb, inode_info);// Asigno n ́umero al nuevo inodo a partir de count
+
         //MODIFICAR EL CONTENIDO DEL DIRECTORIO PADRE  ADJUNTANDO UNA NUEVA ENTRADA PARA EL NUEVO FICHERO O DIRECTORIO
 
         parent_inode_info = dir->i_private;
@@ -273,7 +282,8 @@ static int assoofs_create(struct inode *dir, struct dentry *dentry, umode_t mode
         mark_buffer_dirty(bh);
         sync_dirty_buffer(bh);
         brelse(bh);
-        //ACTUALOZAR LA INFORMACON DEL INODO PADRE INDICANDO QUE AHORA TIENE UN ARCHIVO MAS
+
+        //ACTUALIZAR LA INFORMACON DEL INODO PADRE INDICANDO QUE AHORA TIENE UN ARCHIVO MAS
         parent_inode_info->dir_children_count++;
         assoofs_save_inode_info(sb, parent_inode_info);
         return 0;
@@ -294,12 +304,15 @@ static int assoofs_mkdir(struct inode *dir , struct dentry *dentry, umode_t mode
     struct assoofs_inode_info *parent_inode_info;
     struct assoofs_dir_record_entry *dir_contents;
     struct assoofs_inode_info *inode_info;
+
     // obtengo un puntero al superbloque desde dir
     sb = dir->i_sb;
+
     // obtengo el n ́umero de inodos de lainformaci ́on persistente del superbloque
     count = ((struct assoofs_super_block_info *)sb->s_fs_info)->inodes_count;
     inode = new_inode(sb);
     if(count<ASSOOFS_MAX_FILESYSTEM_OBJECTS_SUPPORTED) {
+
         //CREACION NUEVO INODO
         inode->i_ino = count + 1;
         inode_info = kmalloc(sizeof(struct assoofs_inode_info), GFP_KERNEL);
@@ -311,11 +324,12 @@ static int assoofs_mkdir(struct inode *dir , struct dentry *dentry, umode_t mode
         inode_init_owner(inode, dir, mode);
         d_add(dentry, inode);
         inode->i_fop=&assoofs_dir_operations;
-        assoofs_sb_get_a_freeblock(sb, &inode_info->data_block_number);
-        assoofs_add_inode_info(sb, inode_info);// Asigno n ́umero al nuevo inodo a partir de count
         inode_info = kmem_cache_alloc(assoofs_inode_cache, GFP_KERNEL);
-        //MODIFICAR EL CONTENIDO DEL DIRECTORIO PADRE  ADJUNTANDO UNA NUEVA ENTRADA PARA EL NUEVO FICHERO O DIRECTORIO
+        assoofs_sb_get_a_freeblock(sb, &inode_info->data_block_number);
+        assoofs_add_inode_info(sb, inode_info);// Asigno numero al nuevo inodo a partir de count
 
+
+        //MODIFICAR EL CONTENIDO DEL DIRECTORIO PADRE  ADJUNTANDO UNA NUEVA ENTRADA PARA EL NUEVO FICHERO O DIRECTORIO
         parent_inode_info = dir->i_private;
         bh = sb_bread(sb, parent_inode_info->data_block_number);
         dir_contents = (struct assoofs_dir_record_entry *)bh->b_data;
@@ -329,7 +343,8 @@ static int assoofs_mkdir(struct inode *dir , struct dentry *dentry, umode_t mode
         parent_inode_info->dir_children_count++;
         assoofs_save_inode_info(sb, parent_inode_info);
         return 0;
-    }else {
+
+    }else{
         printk(KERN_ERR "MAXIMUM NUMBER OF OBJECTS EXCEEDED\n");
         return -1;
     }
